@@ -26,23 +26,37 @@ fn main() {
     let mut current_src = String::new();
     stdin.read_to_string(&mut current_src).unwrap();
 
-    current_src = rustfmt(&current_src, max_width);
+    current_src = rustfmt(&current_src, None);
 
     if current_src.lines().any(|x| x.len() > max_width) {
-        current_src = rustfmt(
-            &current_src,
-            current_src.lines().map(|x| x.len()).max().unwrap(),
-        );
-        current_src = rustfmt(&current_src, max_width);
+        let mut width = 100;
+        current_src = rustfmt(&current_src, Some(width));
+
+        while current_src.lines().any(|x| x.len() > width) {
+            let prev_src = current_src.clone();
+
+            dbg!(&width, current_src);
+            current_src = rustfmt(&prev_src, Some(width));
+
+            width = ((width as f64) * 1.2) as usize;
+        }
+
+        current_src = rustfmt(&current_src, None);
     }
 
     print!("{}", current_src);
 }
 
-fn rustfmt(src: &str, max_width: usize) -> String {
+fn rustfmt(src: &str, max_width: Option<usize>) -> String {
     let mut cmd = Command::new("rustfmt")
-        .arg("--config")
-        .arg(format!("max_width={max_width}"))
+        .args(if let Some(max_width) = max_width {
+            vec![
+                "--config".to_string(),
+                format!("max_width={max_width},use_small_heuristics=Off"),
+            ]
+        } else {
+            vec![]
+        })
         .arg("--emit")
         .arg("stdout")
         .arg("--edition")
@@ -57,6 +71,10 @@ fn rustfmt(src: &str, max_width: usize) -> String {
     child_stdin.write_all(src.as_bytes()).unwrap();
 
     let output = cmd.wait_with_output().unwrap();
+
+    if !output.status.success() {
+        return src.to_string();
+    }
 
     String::from_utf8(output.stdout).unwrap()
 }
